@@ -58,13 +58,12 @@ config = {
         "capacity": int(1e5), # buffer max size
     },
     "driver": {
-        "type": "episode", # episode or step
+        "type": "step", # episode or step
         "observers": [
             tf_metrics.AverageEpisodeLengthMetric, # observe average episode length
-            tf_metrics.AverageReturnMetric, # observe average return 
             tf_metrics.MaxReturnMetric # observer max return
         ],
-        "length": 1, # length of simulation, episode or step.
+        "length": 1, # number of loops in a single driver.run()
     },
     "saver": {
         "checkpoint": True,
@@ -75,6 +74,7 @@ config = {
     
 
 TMPDIR = path.abspath(path.dirname(__file__))
+
 
 
 class TFDqnAgent:
@@ -100,28 +100,40 @@ class TFDqnAgent:
         self.reset()
 
     def train(self, nb_iterations=100, log_interval=10):
+        avg_reward_history = []
         time_step, policy_state = self.time_step, self.policy_state
         for t in range(nb_iterations):
-            # run simulation
-            time_step, policy_state = self.driver.run(time_step, policy_state)
+
+            while not time_step.is_last().numpy()[0]:
+                # run simulation
+                time_step, policy_state = self.driver.run(time_step, policy_state)
             
-            # learning
-            experiences, _ = next(self.replay_iter)
-            loss = self.agent.train(experiences).loss
+                # learning
+                if self.replay.num_frames().numpy() < 64:
+                    continue
+
+                experiences, _ = next(self.replay_iter)
+                loss = self.agent.train(experiences).loss
+
+            avg_reward_history.append(self.observers[0].result().numpy())
 
             # cmd display
             if t % log_interval == 0 or t == nb_iterations-1:
                 print("episode: {:4d}".format(t), end="")
-                print(", loss: {:.2f}".format(loss.numpy()), end="")
                 for obv in self.observers:
                     print(", {}: {:.2f}".format(obv.name, obv.result().numpy()), end="")
                 print("")
 
+            time_step = self.env.reset()
+
         # save for continous training.
         self.time_step, self.policy_state = time_step, policy_state
+
         # save policy
         if self.policy_saver:
             self.policy_saver.save(path.join(TMPDIR, "policy"))
+
+        return avg_reward_history
         
     def reset(self):
         """clear the buffer and train from start"""
@@ -129,9 +141,6 @@ class TFDqnAgent:
         self.time_step = self.env.reset()
         self.policy_state = None
         self.replay.clear()
-
-    def save_model(self, filename):
-        """save network parameters"""
 
     def _env(self, cfg):
         """create a tf_env"""
@@ -197,7 +206,8 @@ class TFDqnAgent:
 
     def _observers(self, obvs):
         """instantiate observers"""
-        return [obv() for obv in obvs]
+        observers = [tf_metrics.AverageReturnMetric()] + [obv() for obv in obvs]
+        return observers
 
     def _driver(self, cfg):
         """return a driver"""
@@ -254,10 +264,11 @@ class TFDqnAgent:
 def test():
     import copy
     _cfg = copy.deepcopy(config)
-
+    _cfg["driver"]["type"] = "step"
+    _cfg["saver"]["policy_saver"] = False
     agent = TFDqnAgent(_cfg)
-    agent.train(nb_iterations=10, log_interval=2)
-
+    rewards = agent.train(nb_iterations=10, log_interval=1)
+    print(rewards)
 
 if __name__ == "__main__":
     test()
