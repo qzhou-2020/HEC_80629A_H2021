@@ -22,6 +22,7 @@ class UniformReplayBuffer(object):
         self.buffer = [None for _ in range(self.size)]
         self.index = 0
         self.full = False
+        self.per = False
 
     def append(self, transition):
         """append a transition (namedtuple)"""
@@ -68,6 +69,7 @@ class PrioritizedReplayBuffer(object):
         self.beta = beta
         self.alpha = alpha
         self.eps = eps
+        self.per = True
 
     def append(self, experience: Transition, priority: float):
         self.buffer[self.index] = experience
