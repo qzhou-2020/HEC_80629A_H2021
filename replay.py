@@ -105,6 +105,10 @@ class PrioritizedReplayBuffer(object):
     @property
     def nb_frames(self):
         return self.size if self.full else self.index
+
+    @property
+    def max_priority(self):
+        return self.base_node.value
         
     def _reformat(self, sampled_idxs):
         return {

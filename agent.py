@@ -28,7 +28,8 @@ class DQN:
         self.nb_action = nb_action
         self.state_shape = state_shape
         self.gamma = config['gamma']
-        self.epsilon = config['epsilon']
+        self.min_epsilon = config['min_epsilon']
+        self.epsilon = 1
         self.online_network = self._network(config)
         self.target_network = self._network(config)       
         self.optimizer = optimizer
@@ -42,6 +43,7 @@ class DQN:
         else:
             raise NotImplementedError
     
+    @tf.function
     def learn(self, e, w):
         """update online network"""
 
@@ -50,15 +52,16 @@ class DQN:
         
         # future qa_val
         if not self.use_ddqn:
-            # DQN target
-            qa_val_ = self.target_network(states_).numpy().max(axis=1)
-            target = rewards + self.gamma * qa_val_ * (1 - dones)
+            # DQN
+            qa_val_ = tf.reduce_max(self.target_network(states_), axis=1)
         else:
-            # DDQN target
-            a_ = self.online_network(states_).numpy().argmax(axis=1)
-            m = tf.one_hot(a_, self.nb_action).numpy()
-            qa_val_ = np.sum(self.target_network(states_).numpy() * m, axis=1)
-            target = rewards + self.gamma * qa_val_ * (1 - dones)
+            # DDQN
+            a_ = tf.argmax(self.online_network(states_), axis=1)
+            m = tf.one_hot(a_, self.nb_action)
+            qa_val_ = tf.reduce_sum(tf.multiply(self.target_network(states_), m), axis=1)
+
+        # target 
+        target = tf.cast(rewards, tf.float32) + self.gamma * qa_val_ * (1 - tf.cast(dones, tf.float32))
         
         # Q-network
         mask = tf.one_hot(actions, self.nb_action)
@@ -75,16 +78,17 @@ class DQN:
         
         return loss
 
+    @tf.function
     def temporal_difference(self, e):
         # parse, e is Dict[str: np.ndarray]
         states, actions, rewards, states_, dones = e["s"], e["a"], e["r"], e["s_"], e["done"]
         # future qa_val
-        qa_val_ = self.target_network(states_).numpy().max(axis=1)
-        target = rewards + self.gamma * qa_val_ * (1 - dones)
+        qa_val_ = tf.reduce_max(self.target_network(states_), axis=1)
+        target = tf.cast(rewards, tf.float32) + self.gamma * qa_val_ * (1 - tf.cast(dones, tf.float32))
         # Q-network
         mask = tf.one_hot(actions, self.nb_action)
         q_val = self.online_network(states)
-        qa_val = tf.reduce_sum(tf.multiply(q_val, mask), axis=1).numpy()
+        qa_val = tf.reduce_sum(tf.multiply(q_val, mask), axis=1)
         return target - qa_val
 
     def choose_action(self, state):
@@ -94,6 +98,9 @@ class DQN:
         else:
             actions = self.online_network(state[np.newaxis, :], training=False)
             return tf.argmax(actions[0]).numpy()
+
+    def update_epsilon(self, timestep, decay=1e-5):
+        self.epsilon = self.min_epsilon + (1. - self.min_epsilon) * np.exp(-decay * timestep)
 
     def update_target_network(self, tau):
         """update target network softly every time step"""
@@ -121,6 +128,10 @@ def train(
 
     reward_history = HistoryObserver(num_episodes)
 
+    device_name = tf.test.gpu_device_name()
+    if device_name != '/device:GPU:0':
+        device_name = '/cpu:0'
+
     for Ei in range(num_episodes):
         s = env.reset() # current state
         episode_reward = 0
@@ -128,6 +139,7 @@ def train(
             frame_count += 1
 
             # get action
+            agent.update_epsilon(frame_count)
             a = agent.choose_action(s)
             # interaction
             s_, r, done, _ = env.step(a)
@@ -144,7 +156,7 @@ def train(
                     "r": np.array([r]),
                     "s_": np.array([s_]),
                     "done": np.array([done])
-                })[0]
+                }).numpy()[0]
                 buffer.append(tr, td)
             else:
                 buffer.append(tr)
@@ -158,10 +170,14 @@ def train(
             if frame_count % online_update_period == 0:
                 e, idx, w = buffer.sample(batch_size) # namedtuple
                 if buffer.per:
-                    TDs = agent.temporal_difference(e)
+                    with tf.device(device_name):
+                        TDs = agent.temporal_difference(e).numpy()
                     for i, td in zip(idx, TDs):
                         buffer.update(i, td)
-                loss_value = agent.learn(e, w)
+
+                with tf.device(device_name):
+                    loss_value = agent.learn(e, w)
+                
                 if use_soft_update:
                     agent.update_target_network(target_update_tau)
             
@@ -183,6 +199,9 @@ def train(
                 msg = [f"period: {Ei+1}"]
                 for obv in observer:
                     msg.append(f"{obv.name} reward: {obv.result:.3f}")
+                msg.append(f"epsilon: {agent.epsilon:0.4f}")
+                if buffer.per:
+                    msg.append(f"max priority: {buffer.max_priority:.1f}")
                 print(", ".join(msg))
 
     return reward_history.result

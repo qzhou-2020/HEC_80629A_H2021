@@ -9,7 +9,7 @@ from replay import Transition
 from observer import AverageObserver, MaximumObserver
 
 
-env_name = "CartPole-v1"
+env_name = "CartPole-v0"
 num_episodes = 200
 log_interval = 50
 learning_rate = 5e-4
@@ -22,7 +22,7 @@ online_update_period = 1
 target_update_tau = 1
 target_sync_period = 1
 gamma = 1
-epsilon = 0.1
+epsilon = 0.001
 
 config = {
     "type": "dqn",
@@ -31,7 +31,7 @@ config = {
         "hidden_layers": (32, 32),
     },
     "gamma": gamma,
-    "epsilon": epsilon,
+    "min_epsilon": epsilon,
 }
 
 # env
