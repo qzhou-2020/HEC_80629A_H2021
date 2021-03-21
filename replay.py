@@ -60,7 +60,10 @@ class PrioritizedReplayBuffer(object):
     Buffer is circular, but the priority is segment tree based
     """
 
-    def __init__(self, size: int, beta: float = 0.4, alpha: float = 1.0, eps: float = 0.01):
+    def __init__(
+        self, size: int, beta: float = 0.4, alpha: float = 1.0, eps: float = 0.0001,
+        anneal_beta_rate: float = 0.0, anneal_alpha_rate: float = 0.0 
+    ):
         self.size = size
         self.index = 0
         self.full = False
@@ -68,6 +71,8 @@ class PrioritizedReplayBuffer(object):
         self.base_node, self.leaf_nodes = create_tree([0 for i in range(self.size)]) # self.leaf_nodes.idx refers to self.buffer[idx]
         self.beta = beta
         self.alpha = alpha
+        self.anneal_beta_rate = anneal_beta_rate
+        self.anneal_alpha_rate = anneal_alpha_rate
         self.eps = eps
         self.per = True
 
@@ -76,6 +81,9 @@ class PrioritizedReplayBuffer(object):
         self.update(self.index, priority)
         self.index = (self.index + 1) % self.size
         self.full = self.full or self.index == 0
+        # annealing alpha and beta
+        self.alpha = max(0.0, self.alpha - self.anneal_alpha_rate)
+        self.beta = min(1.0, self.beta + self.anneal_beta_rate)
 
     def update(self, idx: int, priority: float):
         """update segment tree"""
