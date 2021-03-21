@@ -70,7 +70,8 @@ class DQN:
             q_val = self.online_network(states)
             qa_val = tf.reduce_sum(tf.multiply(q_val, mask), axis=1)
             # pay attention to the shape of sample_weight here.
-            loss = self.loss_function(target, qa_val, sample_weight=w[np.newaxis,:])
+            w_ = w[np.newaxis,:] if w is not None else w
+            loss = self.loss_function(target, qa_val, sample_weight=w_)
        
         # backpropagation
         grads = tape.gradient(loss, self.online_network.trainable_variables)
@@ -120,7 +121,7 @@ class DQN:
 def train(
     env, agent, buffer, num_episodes=1000, max_steps_per_episode=10000, batch_size=64,
     online_update_period=1, target_sync_period=4, log_interval=100, use_soft_update=False,
-    target_update_tau=1, observer=None
+    target_update_tau=1, decay_rate=1e-4, observer=None
 ):
     """train the agent"""
 
@@ -139,7 +140,7 @@ def train(
             frame_count += 1
 
             # get action
-            agent.update_epsilon(frame_count)
+            agent.update_epsilon(frame_count, decay=decay_rate)
             a = agent.choose_action(s)
             # interaction
             s_, r, done, _ = env.step(a)
