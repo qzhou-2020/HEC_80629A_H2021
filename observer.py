@@ -44,3 +44,6 @@ class HistoryObserver(Observer):
     @property
     def result(self):
         return self.buffer
+        
+    def last(self, nb):
+        return self.buffer[-nb:]

@@ -1,3 +1,7 @@
+from os import path
+import logging
+logger = logging.getLogger(__name__)
+
 import numpy as np
 import tensorflow as tf
 
@@ -15,7 +19,17 @@ def DenseNet(input_shape: tuple, nb_actions: int, hidden_layers: tuple):
 
 
 def Conv2dNet(input_shape, nb_actions, structure):
-    raise NotImplementedError
+    # todo: wire up structure
+    # this Conv2D-net is based on
+    # https://www.cs.toronto.edu/~vmnih/docs/dqn.pdf
+    layers = [
+        tf.keras.layers.Conv2D(16, (8, 8), strides=(4, 4), input_shape=input_shape, activation="relu"),
+        tf.keras.layers.Conv2D(32, (4, 4), strides=(2, 2), activation="relu"),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(256, activation="relu")
+    ]
+    layers = layers + [tf.keras.layers.Dense(nb_actions, activation=None)]
+    return tf.keras.Sequential(layers)
 
 
 def LstmNet(input_shape, nb_actions, structure):
@@ -40,6 +54,8 @@ class DQN:
     def _network(self, config):
         if config["network"]["type"] == "dense":
             return DenseNet(self.state_shape, self.nb_action, config["network"]["hidden_layers"])
+        elif config["network"]["type"] == "conv2d":
+            return Conv2dNet(self.state_shape, self.nb_action, config["network"].get("structure", None))
         else:
             raise NotImplementedError
     
@@ -117,22 +133,44 @@ class DQN:
         ):
             t.assign(e)
 
+    def save_policy(self, filepath):
+        self.online_network.save(filepath)
+
+
+class Policy:
+
+    def __init__(self, saved_model_path):
+        self.online_network = tf.keras.models.load_model(saved_model_path)
+
+    def choose_action(self, state):
+        actions = self.online_network(state[np.newaxis, :], training=False)
+        return tf.argmax(actions[0]).numpy()
+
 
 def train(
     env, agent, buffer, num_episodes=1000, max_steps_per_episode=10000, batch_size=64,
     online_update_period=1, target_sync_period=4, log_interval=100, use_soft_update=False,
-    target_update_tau=1, decay_rate=1e-4, observer=None
+    target_update_tau=1, decay_rate=1e-5, observer=None, num_saves=0, early_stop=False, 
+    saved_model_dir=None
 ):
     """train the agent"""
 
-    frame_count = 0
+    save_num_episode = None if num_saves == 0 else num_episodes // num_saves
 
+    # stack and time index
+    frame_count = 0
     reward_history = HistoryObserver(num_episodes)
 
+    # tf.device
     device_name = tf.test.gpu_device_name()
     if device_name != '/device:GPU:0':
         device_name = '/cpu:0'
 
+    # saved model path
+    if saved_model_dir is None:
+        saved_model_dir = path.join(path.abspath(path.dirname(__file__)), "saved_model_{}".format(env.unwrapped.spec.id))
+
+    # training loop
     for Ei in range(num_episodes):
         s = env.reset() # current state
         episode_reward = 0
@@ -203,6 +241,17 @@ def train(
                 msg.append(f"epsilon: {agent.epsilon:0.4f}")
                 if buffer.per:
                     msg.append(f"max priority: {buffer.max_priority:.1f}")
-                print(", ".join(msg))
+                logger.info(", ".join(msg))
+
+
+        if save_num_episode is not None:
+            if Ei % save_num_episode == 0:
+                agent.save_policy(path.join(saved_model_dir, f"period_{Ei}"))
+
+        # todo: early termination
+        # terminate if the training is "converged"
+
+    # save online network
+    agent.save_policy(path.join(saved_model_dir, "final_model"))
 
     return reward_history.result

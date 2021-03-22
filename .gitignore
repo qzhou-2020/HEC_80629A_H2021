@@ -1,6 +1,9 @@
 .ipynb_checkpoints
 __pycache__
 policy*
+data
+saved_*
+video
 
 *.mp4
 tmp*
