@@ -99,7 +99,7 @@ class TFDqnAgent:
         self.agent.initialize()
         self.reset()
 
-    def train(self, nb_iterations=100, log_interval=10):
+    def train(self, nb_iterations=100, log_interval=10, warm_up=10000):
         avg_reward_history = []
         time_step, policy_state = self.time_step, self.policy_state
         for t in range(nb_iterations):
@@ -109,7 +109,7 @@ class TFDqnAgent:
                 time_step, policy_state = self.driver.run(time_step, policy_state)
             
                 # learning
-                if self.replay.num_frames().numpy() < 64:
+                if self.replay.num_frames().numpy() < warm_up:
                     continue
 
                 experiences, _ = next(self.replay_iter)
@@ -118,8 +118,8 @@ class TFDqnAgent:
             avg_reward_history.append(self.observers[0].result().numpy())
 
             # cmd display
-            if t % log_interval == 0 or t == nb_iterations-1:
-                print("episode: {:4d}".format(t), end="")
+            if t % log_interval == log_interval - 1:
+                print("episode: {:4d}".format(t+1), end="")
                 for obv in self.observers:
                     print(", {}: {:.2f}".format(obv.name, obv.result().numpy()), end="")
                 print("")
@@ -146,6 +146,13 @@ class TFDqnAgent:
         """create a tf_env"""
         if cfg["lib"] == "gym":
             return tf_py_environment.TFPyEnvironment(suite_gym.load(cfg["name"]))
+        elif cfg["lib"] == "atari":
+            return tf_py_environment.TFPyEnvironment(
+                suite_atari.load(
+                    cfg["name"],
+                    max_episode_steps=50000,
+                    gym_env_wrappers=suite_atari.DEFAULT_ATARI_GYM_WRAPPERS_WITH_STACKING
+            ))
         else:
             raise NotImplementedError
 
@@ -166,6 +173,7 @@ class TFDqnAgent:
                 target_update_tau=cfg["target"]["soft"],
                 target_update_period=cfg["target"]["period"],
                 gamma=cfg["gamma"],
+                reward_scale_factor=1.0,
                 train_step_counter=tf.Variable(0)
             )
         elif cfg["type"].lower() == "ddqn":
@@ -178,6 +186,7 @@ class TFDqnAgent:
                 target_update_tau=cfg["target"]["soft"],
                 target_update_period=cfg["target"]["period"],
                 gamma=cfg["gamma"],
+                reward_scale_factor=1.0,
                 train_step_counter=tf.Variable(0)
             )
         else:
@@ -249,7 +258,17 @@ class TFDqnAgent:
 
     def _conv_net(self, structure):
         """Conv2D sequential network"""
-        raise NotImplementedError
+        nb_actions = self._nb_actions()
+        layers = [
+            tf.keras.layers.Lambda(lambda x: x / 255),
+            tf.keras.layers.Conv2D(32, (8, 8), strides=(4, 4), activation="relu"),
+            tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), activation="relu"),
+            tf.keras.layers.Conv2D(64, (3, 3), activation="relu"),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(256, activation="relu")
+        ]
+        layers = layers + [tf.keras.layers.Dense(nb_actions, activation="linear")]
+        return sequential.Sequential(layers)
 
     def _lstm_net(self, structure):
         """LSTM network"""
@@ -270,5 +289,30 @@ def test():
     rewards = agent.train(nb_iterations=10, log_interval=1)
     print(rewards)
 
+
+def atari():
+    import copy
+    _cfg = copy.deepcopy(config)
+
+    _cfg["env"]["lib"] = "atari"
+    _cfg["env"]["name"] = "MsPacman-v0"
+
+    _cfg["agent"]["gamma"] = 0.99
+    _cfg["agent"]["network"]["type"] = "conv"
+    _cfg["agent"]["network"]["structure"] = None
+    _cfg["agent"]["target"]["period"] = 10000
+    _cfg["agent"]["target"]["soft"] = 1e-6
+    _cfg["agent"]["optimizer"]["loss_fn"] = common.element_wise_huber_loss
+
+    _cfg["replay_buffer"]["batch_size"] = 32
+    _cfg["replay_buffer"]["capacity"] = 10 ** 6
+
+    _cfg["driver"]["type"] = "step"
+    _cfg["saver"]["policy_saver"] = True
+
+    agent = TFDqnAgent(_cfg)
+    rewards = agent.train(nb_iterations=1000000, log_interval=100)
+    print(rewards)
+
 if __name__ == "__main__":
-    test()
+    atari()
