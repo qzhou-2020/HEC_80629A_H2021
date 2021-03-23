@@ -151,7 +151,7 @@ def train(
     env, agent, buffer, num_episodes=1000, max_steps_per_episode=10000, batch_size=64,
     online_update_period=1, target_sync_period=4, log_interval=100, use_soft_update=False,
     target_update_tau=1, decay_rate=1e-5, observer=None, num_saves=0, early_stop=False, 
-    saved_model_dir=None
+    saved_model_dir=None, warm_up=100
 ):
     """train the agent"""
 
@@ -202,7 +202,7 @@ def train(
 
             # learning
 
-            if buffer.nb_frames < batch_size:
+            if buffer.nb_frames < warm_up:
                 if done: break
                 continue
 
@@ -235,7 +235,7 @@ def train(
                 obv.append(episode_reward)
 
             if Ei % log_interval == log_interval - 1:
-                msg = [f"period: {Ei+1}"]
+                msg = [f"period: {Ei+1}", f"frame: {frame_count}"]
                 for obv in observer:
                     msg.append(f"{obv.name} reward: {obv.result:.3f}")
                 msg.append(f"epsilon: {agent.epsilon:0.4f}")

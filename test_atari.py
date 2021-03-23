@@ -16,7 +16,7 @@ from wrapper import AtariWrapper
 def run(
     agent_type="dqn",
     gamma=1.0,
-    min_epsilon=0.001,
+    min_epsilon=0.1,
     learning_rate=2.5e-4,
     env_name="MsPacman-v0",
     use_wrapper=True,
@@ -30,6 +30,10 @@ def run(
     online_update_period = 1,
     target_update_tau = 1,
     target_sync_period = 100,
+    decay_rate=1e-5,
+    num_saves = 0,
+    saved_model_dir = None,
+    warm_up = 10000
 ):
     env = gym.make(env_name)
     if use_wrapper:
@@ -78,7 +82,11 @@ def run(
         log_interval=log_interval,
         use_soft_update=use_soft_update,
         target_update_tau=target_update_tau,
-        observer=observer
+        observer=observer,
+        decay_rate=decay_rate,
+        num_saves=num_saves,
+        saved_model_dir=saved_model_dir,
+        warm_up=10000
     )
 
 if __name__ == "__main__":
@@ -91,6 +99,6 @@ if __name__ == "__main__":
             agent_type="ddqn",
             target_sync_period=200,
             use_prioritized_experience_buffer=False,
-            num_episodes=1000,
-            log_interval=50
+            num_episodes=100,
+            log_interval=10
         )
