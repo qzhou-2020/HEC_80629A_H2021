@@ -23,12 +23,14 @@ def Conv2dNet(input_shape, nb_actions, structure):
     # this Conv2D-net is based on
     # https://www.cs.toronto.edu/~vmnih/docs/dqn.pdf
     layers = [
-        tf.keras.layers.Conv2D(16, (8, 8), strides=(4, 4), input_shape=input_shape, activation="relu"),
-        tf.keras.layers.Conv2D(32, (4, 4), strides=(2, 2), activation="relu"),
+        tf.keras.layers.Lambda(lambda x: x / 255., input_shape=input_shape),
+        tf.keras.layers.Conv2D(32, (8, 8), strides=(4, 4), activation="relu"),
+        tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), activation="relu"),
+        tf.keras.layers.Conv2D(64, (3, 3), strides=(1, 1), activation="relu"),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(256, activation="relu")
     ]
-    layers = layers + [tf.keras.layers.Dense(nb_actions, activation=None)]
+    layers = layers + [tf.keras.layers.Dense(nb_actions, activation="linear")]
     return tf.keras.Sequential(layers)
 
 

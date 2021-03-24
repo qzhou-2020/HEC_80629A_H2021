@@ -96,9 +96,26 @@ if __name__ == "__main__":
     for target_sync_period in [100]:
         logging.info(f"\ntarget_sync_period = {target_sync_period}")
         run(
-            agent_type="ddqn",
-            target_sync_period=200,
+            agent_type="dqn",
+            gamma=1.0,
+            min_epsilon=0.1,
+
+            learning_rate=2.5e-4,
+
+            env_name="MsPacman-v0",
+            use_wrapper=True,
+            num_episodes=10000,
+            log_interval=500,
+            replay_buffer_capacity=10**6,
             use_prioritized_experience_buffer=False,
-            num_episodes=100,
-            log_interval=10
+            max_steps_per_episode = 10000,
+            batch_size = 32,
+            use_soft_update = False,
+            online_update_period = 4,
+            target_update_tau = 1,
+            target_sync_period = 10000,
+            decay_rate=2.5e-6,
+            num_saves = 0,
+            saved_model_dir = None,
+            warm_up = 50000
         )
