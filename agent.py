@@ -28,7 +28,7 @@ def Conv2dNet(input_shape, nb_actions, structure):
         tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), activation="relu"),
         tf.keras.layers.Conv2D(64, (3, 3), strides=(1, 1), activation="relu"),
         tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(256, activation="relu")
+        tf.keras.layers.Dense(512, activation="relu")
     ]
     layers = layers + [tf.keras.layers.Dense(nb_actions, activation="linear")]
     return tf.keras.Sequential(layers)
