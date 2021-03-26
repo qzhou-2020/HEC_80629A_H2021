@@ -9,7 +9,7 @@ from replay import Transition
 from observer import HistoryObserver
 
 
-def DenseNet(input_shape: tuple, nb_actions: int, hidden_layers: tuple):
+def DenseNet(input_shape: tuple, nb_actions: int, hidden_layers: list):
     layers = [tf.keras.layers.Input(shape=input_shape)]
     layers = layers + [
         tf.keras.layers.Dense(size, activation="relu") for size in hidden_layers
@@ -38,26 +38,58 @@ def LstmNet(input_shape, nb_actions, structure):
     raise NotImplementedError
 
 
-class DQN:
+class AnnealingEpsilon:
+    def __init__(self, epsilon=0.1, decay_rate=1e-5, **kwargs):
+        self.epsilon = 1.0
+        self.min_epsilon = epsilon
+        self.decay_rate = decay_rate
+        self.clock = 0
 
-    def __init__(self, config, state_shape, nb_action, optimizer=None, loss_function=None):
+    def update(self):
+        self.clock += 1
+        self.epsilon = self.min_epsilon + (1. - self.min_epsilon) \
+                     * np.exp(-self.decay_rate * self.clock)
+
+
+class DQN:
+    def __init__(self, config, state_shape, nb_action):
         self.nb_action = nb_action
         self.state_shape = state_shape
-        self.gamma = config['gamma']
-        self.min_epsilon = config['min_epsilon']
-        self.epsilon = 1
-        self.online_network = self._network(config)
-        self.target_network = self._network(config)       
-        self.optimizer = optimizer
-        self.loss_function = loss_function
-        self.use_ddqn = True if config.get("config", "ddqn") == "ddqn" else False
+        self.use_ddqn = True if config["type"] == "ddqn" else False
+
+        self.online_network = self._network(config["network"])
+        self.target_network = self._network(config["network"])       
         self.sync_target_network()
+        
+        self.gamma = config['gamma']
+        
+        if config["explore"]["type"] == "annealing_epsilon":
+            self.explore_policy = AnnealingEpsilon(**config["explore"])
+        else:
+            raise NotImplementedError
+        
+        if config["optimizer"]["type"] == "adam":
+            optimizer = tf.keras.optimizers.Adam(
+                learning_rate=config["optimizer"]["learning_rate"])
+        else:
+            raise NotImplementedError
+        self.optimizer = optimizer
+
+        if config["optimizer"]["loss"] == "mse":
+            loss_function = tf.keras.losses.MeanSquaredError()
+        elif config["optimizer"]["loss"] == "mae":
+            loss_function = tf.keras.losses.MeanAbsoluteError()
+        elif config["optimizer"]["loss"] == "huber":
+            loss_function = tf.keras.losses.Huber()
+        else:
+            raise NotImplementedError
+        self.loss_function = loss_function
 
     def _network(self, config):
-        if config["network"]["type"] == "dense":
-            return DenseNet(self.state_shape, self.nb_action, config["network"]["hidden_layers"])
-        elif config["network"]["type"] == "conv2d":
-            return Conv2dNet(self.state_shape, self.nb_action, config["network"].get("structure", None))
+        if config["type"] == "dense":
+            return DenseNet(self.state_shape, self.nb_action, config["hidden_layer_size"])
+        elif config["type"] == "conv2d":
+            return Conv2dNet(self.state_shape, self.nb_action, config.get("conv2d_structure", None))
         else:
             raise NotImplementedError
     
@@ -112,14 +144,12 @@ class DQN:
 
     def choose_action(self, state):
         """e-greedy"""
-        if np.random.random() < self.epsilon:
+        self.explore_policy.update()
+        if np.random.random() < self.explore_policy.epsilon:
             return np.random.choice(self.nb_action)
         else:
             actions = self.online_network(state[np.newaxis, :], training=False)
             return tf.argmax(actions[0]).numpy()
-
-    def update_epsilon(self, timestep, decay=1e-5):
-        self.epsilon = self.min_epsilon + (1. - self.min_epsilon) * np.exp(-decay * timestep)
 
     def update_target_network(self, tau):
         """update target network softly every time step"""
@@ -150,43 +180,59 @@ class Policy:
 
 
 def train(
-    env, agent, buffer, num_episodes=1000, max_steps_per_episode=10000, batch_size=64,
-    online_update_period=1, target_sync_period=4, log_interval=100, use_soft_update=False,
-    target_update_tau=1, decay_rate=1e-5, observer=None, num_saves=0, early_stop=False, 
-    saved_model_dir=None, warm_up=100
+    env, agent, buffer, 
+    mode = "step",
+    length = 1000,
+    batch_size = 32,
+    max_steps_per_episode = 1000,
+    warm_up = 1000,
+    online_update_period = 1,
+    target_sync_period = 1,
+    use_soft_target_update = False,
+    target_soft_update_tau = 1.0,
+    early_stop = False,
+    log_interval = 100,
+    save_final_model = True,
+    save_intermediate_model_at = [],
+    save_model_to = None,
+    observer = None,
+    **kwargs
 ):
     """train the agent"""
-
-    save_num_episode = None if num_saves == 0 else num_episodes // num_saves
-
-    # stack and time index
-    frame_count = 0
-    reward_history = HistoryObserver(num_episodes)
-
     # tf.device
     device_name = tf.test.gpu_device_name()
     if device_name != '/device:GPU:0':
         device_name = '/cpu:0'
 
+    logger.info(f"use DDQN: {agent.use_ddqn}")
+    logger.info(f"use PER: {buffer.per}")
+    logger.info(f"use device: {device_name}")
+
+    # if save intermediate model
+    save_intermediate_model = False if len(save_intermediate_model_at) == 0 else True
+
+    # stack and time index
+    frame_count = 0
+    episode_count = 0
+    new_episode = False
+    reward_history = []
+
     # saved model path
-    if saved_model_dir is None:
-        saved_model_dir = path.join(path.abspath(path.dirname(__file__)), "saved_model_{}".format(env.unwrapped.spec.id))
+    if save_model_to is None:
+        save_model_to = path.join(path.abspath(path.dirname(__file__)), "saved_model_{}".format(env.unwrapped.spec.id))
 
     # training loop
-    for Ei in range(num_episodes):
-        s = env.reset() # current state
-        episode_reward = 0
+    episode_reward = 0.
+    s = env.reset() # current state
+    for index in range(length):
         for ts in range(1, max_steps_per_episode):
             frame_count += 1
-
             # get action
-            agent.update_epsilon(frame_count, decay=decay_rate)
             a = agent.choose_action(s)
             # interaction
             s_, r, done, _ = env.step(a)
             # update reward
             episode_reward += r
-            
             # transition
             tr = Transition(s, a, r, s_, done)
             # save transition
@@ -202,58 +248,66 @@ def train(
             else:
                 buffer.append(tr)
 
-            # learning
+            if buffer.nb_frames > warm_up:
+                # learning from experience
+                if frame_count % online_update_period == 0:
+                    e, idx, w = buffer.sample(batch_size) # namedtuple
+                    if buffer.per:
+                        with tf.device(device_name):
+                            TDs = agent.temporal_difference(e).numpy()
+                        for i, td in zip(idx, TDs):
+                            buffer.update(i, td)
 
-            if buffer.nb_frames < warm_up:
-                if done: break
-                continue
-
-            if frame_count % online_update_period == 0:
-                e, idx, w = buffer.sample(batch_size) # namedtuple
-                if buffer.per:
                     with tf.device(device_name):
-                        TDs = agent.temporal_difference(e).numpy()
-                    for i, td in zip(idx, TDs):
-                        buffer.update(i, td)
+                        loss_value = agent.learn(e, w)
+                    
+                    if use_soft_target_update:
+                        agent.update_target_network(target_soft_update_tau)
 
-                with tf.device(device_name):
-                    loss_value = agent.learn(e, w)
-                
-                if use_soft_update:
-                    agent.update_target_network(target_update_tau)
+                # sync target network
+                if frame_count % target_sync_period == 0:
+                    agent.sync_target_network() 
             
-            if frame_count % target_sync_period == 0:
-                agent.sync_target_network()
-
-            if done:
+            if done or ts == max_steps_per_episode-1:
+                episode_count += 1
+                new_episode = True
                 break
 
-            s = s_ # update current state
+            s = s_
 
-        reward_history.append(episode_reward)
+            if mode == "step":
+                break
 
-        if observer:
-            for obv in observer:
-                obv.append(episode_reward)
-
-            if Ei % log_interval == log_interval - 1:
-                msg = [f"period: {Ei+1}", f"frame: {frame_count}"]
+            # end of max_step_per_episode loop
+        if new_episode:
+            reward_history.append(episode_reward)
+            if observer:
                 for obv in observer:
-                    msg.append(f"{obv.name} reward: {obv.result:.3f}")
-                msg.append(f"epsilon: {agent.epsilon:0.4f}")
-                if buffer.per:
-                    msg.append(f"max priority: {buffer.max_priority:.1f}")
-                logger.info(", ".join(msg))
+                    obv.append(episode_reward)
+            # reset
+            new_episode = False
+            episode_reward = 0
+            s = env.reset()
 
+        if index % log_interval == log_interval - 1:
+            msg = [f"frame: {frame_count}", f"episode: {episode_count}"]
+            for obv in observer:
+                msg.append(f"{obv.name} reward: {obv.result:.3f}")
+            msg.append(f"epsilon: {agent.explore_policy.epsilon:0.4f}")
+            if buffer.per:
+                msg.append(f"max priority: {buffer.max_priority:.1f}")
+            logger.info(", ".join(msg))
 
-        if save_num_episode is not None:
-            if Ei % save_num_episode == 0:
-                agent.save_policy(path.join(saved_model_dir, f"period_{Ei}"))
+        if save_intermediate_model:
+            if index+1 in save_intermediate_model_at:
+                agent.save_policy(path.join(save_model_to, f"step_{index+1}"))
 
-        # todo: early termination
         # terminate if the training is "converged"
+        if early_stop:
+        # todo: early termination
+            pass
 
     # save online network
-    agent.save_policy(path.join(saved_model_dir, "final_model"))
+    agent.save_policy(path.join(save_model_to, "final_model"))
 
-    return reward_history.result
+    return reward_history
