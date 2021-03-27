@@ -75,7 +75,6 @@ parser.add_argument("--dpi", type=int, default=72)
 parser.add_argument("--repeat", type=int, default=3)
 
 args = parser.parse_args()
-print(args)
 
 # load policy
 p = Policy(args.policy_dir)

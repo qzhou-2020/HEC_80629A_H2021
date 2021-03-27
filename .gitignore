@@ -4,6 +4,7 @@ policy*
 data
 saved_*
 video
+conf_local
 
 *.mp4
 tmp*

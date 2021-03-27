@@ -1,0 +1,65 @@
+{
+    "env": {
+        "name": "LunarLander-v2",
+        "is_atari": false,
+        "use_wrapper_if_atari": true,
+        "wrapper": {
+            "noop_max": 30,
+            "frame_skip": 4,
+            "screen_size": 84,
+            "terminal_on_life_loss": true,
+            "clip_reward": true
+        }
+    },
+    "agent": {
+        "type": "ddqn",
+        "network": {
+            "type": "dense_duel",
+            "hidden_layer_size": [64, 64],
+            "state_hidden_layer": [256],
+            "advance_hidden_layer": [256]
+        },
+        "explore": {
+            "type": "annealing_epsilon",
+            "epsilon": 0.01,
+            "decay_rate": 1e-5
+        },
+        "optimizer": {
+            "type": "adam",
+            "loss": "mse",
+            "learning_rate": 2.5e-4
+        },
+        "gamma": 0.99
+    },
+    "buffer": {
+        "use_per": false,
+        "size": 100000,
+        "alpha": 0.6,
+        "beta": 0.4,
+        "anneal_alpha_rate": 1e-5,
+        "anneal_beta_rate": 1e-5
+    },
+    "train": {
+        "mode": "episode",
+        "length": 1000,
+        "batch_size": 32,
+        "max_steps_per_episode": 10000,
+        "warm_up": 1000,
+        "online_update_period": 1,
+        "target_sync_period": 1000,
+        "use_soft_target_update": false,
+        "target_soft_update_tau": 0.1,
+        "early_stop": false,
+        "log_interval": 100,
+        "display_average_reward": true,
+        "display_max_reward": true
+    },
+    "misc": {
+        "save_final_model": false,
+        "save_intermediate_model_at": [
+        ],
+        "save_model_to": "/content/drive/MyDrive/RL/LunarLander_d3qn",
+        "save_log": true,
+        "save_log_to": "/content/drive/MyDrive/RL/LunarLander_d3qn.log"
+    }
+}

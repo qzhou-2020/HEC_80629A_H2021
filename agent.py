@@ -2,40 +2,75 @@ from os import path
 import logging
 logger = logging.getLogger(__name__)
 
+import copy
+import time
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import layers
 
 from replay import Transition
 from observer import HistoryObserver
 
 
 def DenseNet(input_shape: tuple, nb_actions: int, hidden_layers: list):
-    layers = [tf.keras.layers.Input(shape=input_shape)]
-    layers = layers + [
-        tf.keras.layers.Dense(size, activation="relu") for size in hidden_layers
+    fc = [layers.Input(shape=input_shape)]
+    fc = fc + [
+        fc.Dense(size, activation="relu") for size in hidden_layers
     ]
-    layers = layers + [tf.keras.layers.Dense(nb_actions, activation=None)]
-    return tf.keras.Sequential(layers)
+    fc = fc + [layers.Dense(nb_actions, activation=None)]
+    return tf.keras.Sequential(fc)
 
 
 def Conv2dNet(input_shape, nb_actions, structure):
     # todo: wire up structure
-    # this Conv2D-net is based on
-    # https://www.cs.toronto.edu/~vmnih/docs/dqn.pdf
-    layers = [
-        tf.keras.layers.Lambda(lambda x: x / 255., input_shape=input_shape),
-        tf.keras.layers.Conv2D(32, (8, 8), strides=(4, 4), activation="relu"),
-        tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), activation="relu"),
-        tf.keras.layers.Conv2D(64, (3, 3), strides=(1, 1), activation="relu"),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(512, activation="relu")
+    conv = [
+        layers.Lambda(lambda x: x / 255., input_shape=input_shape),
+        layers.Conv2D(32, (8, 8), strides=(4, 4), activation="relu"),
+        layers.Conv2D(64, (4, 4), strides=(2, 2), activation="relu"),
+        layers.Conv2D(64, (3, 3), strides=(1, 1), activation="relu"),
+        layers.Flatten(),
+        layers.Dense(512, activation="relu")
     ]
-    layers = layers + [tf.keras.layers.Dense(nb_actions, activation="linear")]
-    return tf.keras.Sequential(layers)
+    conv = conv + [layers.Dense(nb_actions, activation="linear")]
+    return tf.keras.Sequential(conv)
 
 
 def LstmNet(input_shape, nb_actions, structure):
     raise NotImplementedError
+
+
+class DuelingOutLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super(DuelingOutLayer, self).__init__(**kwargs)
+    
+    def call(self, inputs, **kwargs):
+        mean_adv = tf.reduce_mean(inputs[1], axis=1, keepdims=True)
+        return inputs[0] + inputs[1] - mean_adv
+
+
+def DuelDenseNet(input_shape: tuple, nb_actions: int, layers1: list, layers2: list, layers3: list):
+    fc = [layers.Input(shape=input_shape, name="input_layer_0")]
+    for i, units in enumerate(layers1):
+        tmp = layers.Dense(units, activation="relu", name=f"shared_layer_{i+1}")(fc[i])
+        fc.append(tmp)
+
+    _layers2 = copy.deepcopy(layers2)
+    state = [layers.Dense(_layers2.pop(0), activation="relu", name=f"state_layer_1")(fc[-1])]
+    for i, units in enumerate(_layers2):
+        tmp = layers.Dense(units, activation="relu", name=f"state_layer_{i+2}")(state[i])
+        state.append(tmp)
+
+    _layers3 = copy.deepcopy(layers3)
+    advance = [layers.Dense(_layers3.pop(0), activation="relu", name=f"adv_layer_1")(fc[-1])]
+    for i, units in enumerate(_layers3):
+        tmp = layers.Dense(units, activation="relu", name=f"adv_layer_{i+2}")(advance[i])
+        advance.append(tmp)
+
+    V = layers.Dense(1, name="state_value")(state[-1])
+    A = layers.Dense(nb_actions, name="advance_value")(advance[-1])
+
+    out = DuelingOutLayer()([V,A])
+    return tf.keras.models.Model(inputs=[fc[0]], outputs=[out])
 
 
 class AnnealingEpsilon:
@@ -90,6 +125,13 @@ class DQN:
             return DenseNet(self.state_shape, self.nb_action, config["hidden_layer_size"])
         elif config["type"] == "conv2d":
             return Conv2dNet(self.state_shape, self.nb_action, config.get("conv2d_structure", None))
+        elif config["type"] == "dense_duel":
+            return DuelDenseNet(
+                self.state_shape, self.nb_action, 
+                config["hidden_layer_size"], 
+                config.get("state_hidden_layer", [256]), 
+                config.get("advance_hidden_layer", [256])
+            )
         else:
             raise NotImplementedError
     
@@ -204,9 +246,13 @@ def train(
     if device_name != '/device:GPU:0':
         device_name = '/cpu:0'
 
+    # logger
     logger.info(f"use DDQN: {agent.use_ddqn}")
     logger.info(f"use PER: {buffer.per}")
     logger.info(f"use device: {device_name}")
+
+    # clock
+    start_time = time.time()
 
     # if save intermediate model
     save_intermediate_model = False if len(save_intermediate_model_at) == 0 else True
@@ -296,6 +342,8 @@ def train(
             msg.append(f"epsilon: {agent.explore_policy.epsilon:0.4f}")
             if buffer.per:
                 msg.append(f"max priority: {buffer.max_priority:.1f}")
+            time_lapse = time.time() - start_time
+            msg.append(f"elapsed time (sec): {time_lapse:.2f}")
             logger.info(", ".join(msg))
 
         if save_intermediate_model:

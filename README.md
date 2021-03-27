@@ -27,6 +27,7 @@ install the package
 !apt install python-opengl
 !apt install ffmpeg
 !apt install xvfb
+!apt install imagemagick
 
 !pip install box2d
 !pip install gym[box2d]
