@@ -73,7 +73,7 @@ def DuelDenseNet(input_shape: tuple, nb_actions: int, layers1: list, layers2: li
     return tf.keras.models.Model(inputs=[fc[0]], outputs=[out])
 
 
-class AnnealingEpsilon:
+class AnnealingEpsilonGreedy:
     def __init__(self, epsilon=0.1, decay_rate=1e-5, **kwargs):
         self.epsilon = 1.0
         self.min_epsilon = epsilon
@@ -86,39 +86,25 @@ class AnnealingEpsilon:
                      * np.exp(-self.decay_rate * self.clock)
 
 
+class EpsilonGreedy:
+    def __init__(self, epsilon=0.1, **kwargs):
+        self.epsilon = 1.0
+
+    def update(self):
+        pass
+            
+
 class DQN:
     def __init__(self, config, state_shape, nb_action):
         self.nb_action = nb_action
         self.state_shape = state_shape
         self.use_ddqn = True if config["type"] == "ddqn" else False
-
+        self.gamma = config['gamma']
         self.online_network = self._network(config["network"])
         self.target_network = self._network(config["network"])       
         self.sync_target_network()
-        
-        self.gamma = config['gamma']
-        
-        if config["explore"]["type"] == "annealing_epsilon":
-            self.explore_policy = AnnealingEpsilon(**config["explore"])
-        else:
-            raise NotImplementedError
-        
-        if config["optimizer"]["type"] == "adam":
-            optimizer = tf.keras.optimizers.Adam(
-                learning_rate=config["optimizer"]["learning_rate"])
-        else:
-            raise NotImplementedError
-        self.optimizer = optimizer
-
-        if config["optimizer"]["loss"] == "mse":
-            loss_function = tf.keras.losses.MeanSquaredError()
-        elif config["optimizer"]["loss"] == "mae":
-            loss_function = tf.keras.losses.MeanAbsoluteError()
-        elif config["optimizer"]["loss"] == "huber":
-            loss_function = tf.keras.losses.Huber()
-        else:
-            raise NotImplementedError
-        self.loss_function = loss_function
+        self.explore_policy = self._exploration(config["explore"])
+        self.optimizer, self.loss_function = self._optimizer(config["optimizer"])
 
     def _network(self, config):
         if config["type"] == "dense":
@@ -135,6 +121,30 @@ class DQN:
         else:
             raise NotImplementedError
     
+    def _exploration(self, config):
+        if config["type"] == "annealing_epsilon":
+            return AnnealingEpsilonGreedy(**config)
+        elif config["type"] == "epsilon":
+            return EpsilonGreedy(**config)
+        else:
+            raise NotImplementedError
+    
+    def _optimizer(self, config):
+        if config["type"] == "adam":
+            optimizer = tf.keras.optimizers.Adam(
+                learning_rate=config["learning_rate"])
+        else:
+            raise NotImplementedError
+        if config["loss"] == "mse":
+            loss_function = tf.keras.losses.MeanSquaredError()
+        elif config["loss"] == "mae":
+            loss_function = tf.keras.losses.MeanAbsoluteError()
+        elif config["loss"] == "huber":
+            loss_function = tf.keras.losses.Huber()
+        else:
+            raise NotImplementedError
+        return optimizer, loss_function
+
     @tf.function
     def learn(self, e, w):
         """update online network"""
