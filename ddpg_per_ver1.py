@@ -239,8 +239,6 @@ class DDPG:
             self.memory.store(transition)
         else:
             self.memory.append(obs_array)
-
-
     
     def per_update(
         self, state_batch, action_batch, reward_batch, next_state_batch, done_batch, ISWeights, tree_idx
@@ -289,19 +287,15 @@ class DDPG:
                 zip(critic_grad, self.critic_model.trainable_variables)
             )
 
-            with tf.GradientTape() as tape:
-                target_actions = self.target_actor_model(next_state_batch, training=True)
-                y = reward_batch + self.gamma * self.target_critic_model(
-                    [next_state_batch, target_actions], training=True
-                ) * (1. - done_batch)
-                critic_value = self.critic_model([state_batch, action_batch], training=True)
-                errors = y - critic_value
-                critic_loss = tf.math.reduce_mean(ISWeights * tf.math.square(errors))
+        with tf.GradientTape() as tape:
+            actions = self.actor_model(state_batch, training=True)
+            critic_value = self.critic_model([state_batch, actions], training=True)
+            actor_loss = -tf.math.reduce_mean(critic_value)
 
-            critic_grad = tape.gradient(critic_loss, self.critic_model.trainable_variables)
-            self.critic_optimizer.apply_gradients(
-                zip(critic_grad, self.critic_model.trainable_variables)
-            )
+        actor_grad = tape.gradient(actor_loss, self.actor_model.trainable_variables)
+        self.actor_optimizer.apply_gradients(
+            zip(actor_grad, self.actor_model.trainable_variables)
+        )
 
 
     def replay(self):
@@ -316,7 +310,6 @@ class DDPG:
             done_batch = tf.convert_to_tensor(dones,dtype=tf.float32)
             self.per_update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, ISWeights, tree_idx)
         else:
-            ISWeights = 1.0
             samples = random.sample(self.memory, min(self.batch_size,len(self.memory)))
             trans_s = np.array(samples,dtype=object).T
             state_batch = tf.convert_to_tensor(np.row_stack(trans_s[0]))
@@ -349,7 +342,6 @@ class DDPG:
                 update_target(self.critic_model, self.target_critic_model, self.tau)
 
                 if done:
-                    self.noise.reset()
                     break
 
                 prev_state = state
