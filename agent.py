@@ -15,7 +15,7 @@ from observer import HistoryObserver
 def DenseNet(input_shape: tuple, nb_actions: int, hidden_layers: list):
     fc = [layers.Input(shape=input_shape)]
     fc = fc + [
-        fc.Dense(size, activation="relu") for size in hidden_layers
+        layers.Dense(size, activation="relu") for size in hidden_layers
     ]
     fc = fc + [layers.Dense(nb_actions, activation=None)]
     return tf.keras.Sequential(fc)
@@ -73,7 +73,7 @@ def DuelDenseNet(input_shape: tuple, nb_actions: int, layers1: list, layers2: li
     return tf.keras.models.Model(inputs=[fc[0]], outputs=[out])
 
 
-class AnnealingEpsilonGreedy:
+class DecayEpsilonGreedy:
     def __init__(self, epsilon=0.1, decay_rate=1e-5, **kwargs):
         self.epsilon = 1.0
         self.min_epsilon = epsilon
@@ -122,8 +122,8 @@ class DQN:
             raise NotImplementedError
     
     def _exploration(self, config):
-        if config["type"] == "annealing_epsilon":
-            return AnnealingEpsilonGreedy(**config)
+        if config["type"] == "decay_epsilon":
+            return DecayEpsilonGreedy(**config)
         elif config["type"] == "epsilon":
             return EpsilonGreedy(**config)
         else:

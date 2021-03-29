@@ -18,7 +18,7 @@
             "hidden_layer_size": [64, 64]
         },
         "explore": {
-            "type": "annealing_epsilon",
+            "type": "decay_epsilon",
             "epsilon": 0.1,
             "decay_rate": 1e-5
         },
@@ -44,7 +44,7 @@
         "max_steps_per_episode": 1000,
         "warm_up": 1000,
         "online_update_period": 10,
-        "target_sync_period": 100,
+        "target_sync_period": 10,
         "use_soft_target_update": false,
         "target_soft_update_tau": 0.1,
         "early_stop": false,

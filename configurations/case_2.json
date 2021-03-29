@@ -18,7 +18,7 @@
             "hidden_layer_size": [64, 64]
         },
         "explore": {
-            "type": "annealing_epsilon",
+            "type": "epsilon",
             "epsilon": 0.1,
             "decay_rate": 1e-5
         },
