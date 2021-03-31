@@ -5,6 +5,7 @@ data
 saved_*
 video
 conf_local
+results
 
 *.mp4
 tmp*
