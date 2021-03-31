@@ -62,39 +62,40 @@ def save_to_mp4(p, env, filename, fps, repeat):
             video.append_data(frame)
 
 
-# handle cli
-parser = argparse.ArgumentParser(description="evaluate a policy")
-parser.add_argument("policy_dir", type=str)
-parser.add_argument("env_name", type=str)
-parser.add_argument("--atari", action="store_true")
-parser.add_argument("--runs", type=int, default=10)
-parser.add_argument("--save", action="store_true")
-parser.add_argument("--save-to", type=str, default="example.gif", help="save as gif or mp4")
-parser.add_argument("--fps", type=int, default=24)
-parser.add_argument("--dpi", type=int, default=72)
-parser.add_argument("--repeat", type=int, default=3)
+if __name__ == "__main__":
+    # handle cli
+    parser = argparse.ArgumentParser(description="evaluate a policy")
+    parser.add_argument("policy_dir", type=str)
+    parser.add_argument("env_name", type=str)
+    parser.add_argument("--atari", action="store_true")
+    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument("--save", action="store_true")
+    parser.add_argument("--save-to", type=str, default="example.gif", help="save as gif or mp4")
+    parser.add_argument("--fps", type=int, default=24)
+    parser.add_argument("--dpi", type=int, default=72)
+    parser.add_argument("--repeat", type=int, default=3)
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-# load policy
-p = Policy(args.policy_dir)
+    # load policy
+    p = Policy(args.policy_dir)
 
-# load env
-env = gym.make(args.env_name)
-if args.atari:
-    env = AtariWrapper(env)
+    # load env
+    env = gym.make(args.env_name)
+    if args.atari:
+        env = AtariWrapper(env)
 
-# evalulate
-history, _ = eval(p, env, args.runs)
-statistics(history)
+    # evalulate
+    history, _ = eval(p, env, args.runs)
+    statistics(history)
 
-if not args.save:
-    exit(0)
+    if not args.save:
+        exit(0)
 
-suffix = args.save_to.split(".")[-1]
-if suffix == "gif":
-    save_to_gif(p, env, args.save_to, args.dpi, args.fps, args.repeat)
-elif suffix == "mp4": 
-    save_to_mp4(p, env, args.save_to, args.fps, args.repeat)
-else:
-    logger.error(f"output format '{suffix}' is not supported")
+    suffix = args.save_to.split(".")[-1]
+    if suffix == "gif":
+        save_to_gif(p, env, args.save_to, args.dpi, args.fps, args.repeat)
+    elif suffix == "mp4": 
+        save_to_mp4(p, env, args.save_to, args.fps, args.repeat)
+    else:
+        logger.error(f"output format '{suffix}' is not supported")
