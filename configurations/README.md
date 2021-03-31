@@ -14,6 +14,8 @@ We are testing several hyperparameters in this study.
 |      10    |     DDQN      |   decay epsilon         |          decay PER        |      $2^{20}$      |     32     |        1        |           1000            |  0.99 |
 |      11    |     D3QN      |   decay epsilon         |           normal          |      $2^{17}$      |     32     |        1        |           1000            |  0.99 |
 |      12    |     D3QN      |   decay epsilon         |          decay PER        |      $2^{17}$      |     32     |        1        |           1000            |  0.99 |
+|      5-1   |      DQN      |   decay epsilon         |           normal          |      $2^{17}$      |     32     |        2        |           1000            |  0.99 |
+|      6-1   |      DQN      |   decay epsilon         |           PER             |      $2^{17}$      |     32     |        1        |           1000            |  0.99 |
 
 
 
