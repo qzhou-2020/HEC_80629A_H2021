@@ -1,7 +1,7 @@
 # HEC_80629A_H2021
-Learning Project
+Learning Project,
 
-# How to use
+# How to use (DQN family)
 
 in the command line
 ```cmd
@@ -50,6 +50,10 @@ make gif or mp4
 ```python
 %run HEC_80629A_H2021/eval_policy.py saved_policy_dir env_name --save --save-to filename.gif
 ```
+
+# How to use (DDPG and PPO)
+
+Upload Jupyter Notebooks (ddpg.ipynb, PPO_pytorch_continous.ipynb under "policy_based models" folder) to Colab and execute.
 
 # Demo
 
