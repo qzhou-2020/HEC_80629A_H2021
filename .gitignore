@@ -1,6 +1,6 @@
 .ipynb_checkpoints
 __pycache__
-policy*
+#policy*
 data
 saved_*
 video
