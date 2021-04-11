@@ -57,4 +57,14 @@ Upload Jupyter Notebooks (ddpg.ipynb, PPO_pytorch_continous.ipynb under "policy_
 
 # Demo
 
+Good one:
+
 ![](./media/lunarlander_v2_1500.gif)
+
+Bad one:
+
+![](./media/lunarlander_v2_bad.gif)
+
+Interesting one:
+
+![](./media/lunarlander_v2_hover.gif)
